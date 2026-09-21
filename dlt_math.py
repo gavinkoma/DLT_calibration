@@ -147,10 +147,10 @@ def modified_dlt_score(params, object_points, image_points):
 		)
 
 def compute_modified_dlt(object_points, image_points):
-
 	#ensure working with floats
 	object_points = np.asarray(object_points,dtype=float)
 	image_points = np.asarray(image_points,dtype=float)
+
 	valid_rows = (
 		~np.isnan(object_points).any(axis=1)
 		& ~np.isnan(image_points).any(axis=1)
@@ -160,34 +160,38 @@ def compute_modified_dlt(object_points, image_points):
 	image_points = image_points[valid_rows]
 
 
-    standard_coefficients, _ = compute_dlt(
-        object_points,
-        image_points
-  		)
+	standard_coefficients, _ = compute_dlt(
+		object_points,
+		image_points
+		)
 
-    initial_guess = standard_coefficients[1:11]
+	initial_guess = standard_coefficients[1:11]
 
-    result = minimize(
-        modified_dlt_score,
-        initial_guess,
-        args=(object_points, image_points),
-        method="Nelder-Mead"
-    )
+	result = minimize(
+		modified_dlt_score,
+		initial_guess,
+		args=(object_points, image_points),
+		method="Nelder-Mead",
+		options={
+			"maxiter":100000,
+			"maxfev":100000
+			}
+		)
 
-    if not result.success:
-        raise RuntimeError(
-            f"Modified DLT optimization failed: {result.message}"
-        )
+	if not result.success:
+		raise RuntimeError(
+			f"Modified DLT optimization failed: {result.message}"
+			)
 
-    coefficients = build_modified_coefficients(result.x)
+	coefficients = build_modified_coefficients(result.x)
 
-    rmse = reprojection_rmse(
-    	coefficients,
-    	object_points,
-    	image_points
-    	)
+	rmse = reprojection_rmse(
+		coefficients,
+		object_points,
+		image_points
+		)
 
-    return coefficients, rmse
+	return coefficients, rmse
 
 def project_points(coefficients, object_points):
     """
@@ -268,15 +272,6 @@ def load_object_points(filename):
 		delimiter=',',
 		skiprows=1
 		)
-
-object_points = load_object_points("obj_positions.csv")
-
-
-
-
-
-
-
 
 
 
