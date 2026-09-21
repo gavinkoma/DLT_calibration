@@ -1,0 +1,5 @@
+#ignore file for git materials
+*.mp4
+*.csv
+*.png
+*.jpeg
