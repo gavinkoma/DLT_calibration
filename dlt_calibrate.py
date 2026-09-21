@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
-from dlt_math import load_object_points
+from dlt_math import load_object_points, compute_dlt, compute_modified_dlt
 
 DEFAULT_OBJECT_FILE = Path(__file__).with_name("obj_positions.csv")
 
@@ -160,6 +160,7 @@ def show_calibration_image(image_path, object_points):
 		elif event.key == "right":
 			current_point = min(
 				len(object_points)-1,
+				current_point+1
 				)
 
 			print_current_point()
@@ -177,6 +178,56 @@ def show_calibration_image(image_path, object_points):
 	plt.show()
 
 	return image_points
+
+def save_calibration_results(
+		output_dir,
+		image_path,
+		object_points,
+		image_points,
+		coefficients,
+		rmse):
+
+	output_dir.mkdir(parents=True, exist_ok=True)
+	stem = image_path.stem
+
+	coefficients_file = output_dir / f"{stem}_dlt_coefficients.csv"
+	points_file = output_dir / f"{stem}_clicked_points.csv"
+
+	coefficient_data = np.column_stack([
+		np.arange(1,12),
+		coefficients
+		])
+
+	np.savetxt(
+		coefficients_file,
+		coefficient_data,
+		delimiter=',',
+		header="coefficient,value",
+		comments="",
+		fmt=["%d",'%.12g']
+		)
+
+	with open(coefficients_file,"a") as f:
+		f.write(f"rmse_pixels,{rmse:.12g}\n")
+
+	point_data = np.column_stack([
+		np.arange(1,len(object_points)+1),
+		object_points,
+		image_points
+		])
+
+	np.savetxt(
+		points_file,
+		point_data,
+		delimiter=',',
+		header="point,X,Y,Z,u,v",
+		comments="",
+		fmt=["%d","%.12g","%.12g","%.12g","%.12g","%.12g"])
+
+	print("\nCalibration saved:")
+	print(coefficients_file)
+	print(points_file)
+	
 
 
 def main():
@@ -200,6 +251,36 @@ def main():
 		image_path,
 		object_points
 		)
+
+	standard_coefficients, standard_rmse = compute_dlt(
+		object_points,
+		image_points
+		)
+
+	modified_coefficients, modified_rmse = compute_modified_dlt(
+		object_points,
+		image_points
+		)
+
+	output_dir = image_path.parent / "dlt_results"
+
+	save_calibration_results(
+		output_dir = output_dir,
+		image_path = image_path,
+		object_points = object_points,
+		image_points = image_points,
+		coefficients = modified_coefficients,
+		rmse = modified_rmse)
+
+	print("\nSTANDARD 11-PARAMETER DLT")
+	print(f"Residual: {standard_rmse:.3f} pixels")
+	print("Coefficients:")
+	print(standard_coefficients)
+
+	print("\nMODIFIED 11-PARAMETER DLT")
+	print(f"Residual: {modified_rmse:.3f} pixels")
+	print("Coefficients:")
+	print(modified_coefficients)
 
 if __name__ == '__main__':
 		main()
