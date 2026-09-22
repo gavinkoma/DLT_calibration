@@ -11,7 +11,11 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from matplotlib.widgets import Button
 
-from dlt_math import load_object_points, compute_dlt, compute_modified_dlt
+from dlt_math import (load_object_points, 
+	compute_dlt, 
+	compute_modified_dlt, 
+	project_points
+	)
 
 DEFAULT_OBJECT_FILE = Path(__file__).with_name("obj_positions.csv")
 
@@ -277,6 +281,10 @@ def show_calibration_image(image_path, object_points):
 	def finish_calibration(event=None):
 		nonlocal finished
 
+		if finished:
+			return
+		finished=True
+
 		print("\nComputing calibration...")
 
 		standard_coefficients, standard_rmse=compute_dlt(
@@ -306,7 +314,6 @@ def show_calibration_image(image_path, object_points):
 			f"\nStandard DLT residual: {standard_rmse:.3f} pixels"
 			)
 
-		finished = True
 
 	#keyboard control
 	def on_key(event):
@@ -468,6 +475,82 @@ def save_combined_coefficients(
 	print(output_file)
 
 
+def save_sanity_check_image(
+	image_path,
+	output_dir,
+	camera_number,
+	object_points,
+	image_points,
+	coefficients):
+	
+	image = mpimg.imread(image_path)
+
+	reprojected_points = project_points(
+		coefficients,
+		object_points)
+
+	output_file = (
+		output_dir / 
+		f"camera_{camera_number}_sanity_check.png")
+
+	fig,ax = plt.subplots(figsize=(14,8))
+
+	ax.imshow(image)
+	ax.set_title(
+		f"Camera {camera_number} sanity check",
+		fontsize=12)
+	ax.axis("off")
+
+	#add the clicked points 
+	ax.scatter(
+		image_points[:,0],
+		image_points[:,1],
+		s=110,
+		marker='o',
+		facecolors="none",
+		edgecolors='red',
+		linewidths=1.8,
+		zorder=3,
+		label="Clicked points")
+
+	#reprojected points 
+	ax.scatter(
+		reprojected_points[:,0],
+		reprojected_points[:,1],
+		s=55,
+		marker="+",
+		c="blue",
+		linewidths=1.8,
+		zorder=4,
+		label="Reprojected points")
+
+	#point numbers
+	for i in range(len(object_points)):
+		u=image_points[i,0]
+		v=image_points[i,1]
+
+		ax.text(
+			u+5,
+			v+5,
+			str(i+1),
+			color="white",
+			fontsize=9)
+
+	ax.legend(loc="upper right")
+
+	plt.tight_layout()
+	plt.savefig(
+		output_file,
+		dpi=200,
+		bbox_inches="tight"
+		)
+
+	plt.close(fig)
+
+	print("\nSanity check image save:")
+	print(output_file)
+
+
 def main():
 	args=parse_args()
 
@@ -525,6 +608,14 @@ def main():
 			image_points = image_points,
 			coefficients = modified_coefficients,
 			rmse = modified_rmse)
+
+		save_sanity_check_image(
+			image_path = image_path,
+			output_dir=output_dir,
+			camera_number=camera_number,
+			object_points=object_points,
+			image_points=image_points,
+			coefficients=modified_coefficients)
 
 		print("\nSTANDARD 11-PARAMETER DLT")
 		print(f"Residual: {standard_rmse:.3f} pixels")
