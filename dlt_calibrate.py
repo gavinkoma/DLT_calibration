@@ -82,6 +82,13 @@ def show_calibration_image(image_path, object_points):
 	current_point = 0
 	finished = False
 
+	calibration_result = {
+		"standard_coefficients":None,
+		"standard_rmse":None,
+		"modified_coefficients":None,
+		"modified_rmse":None
+		}
+
 	point_markers = [None] * len(object_points)
 	point_labels = [None] * len(object_points)
 
@@ -108,7 +115,7 @@ def show_calibration_image(image_path, object_points):
 
 		fig.canvas.draw_idle()
 
-		update_status()
+	update_status()
 
 
 	#zoom view // magnified box
@@ -270,8 +277,36 @@ def show_calibration_image(image_path, object_points):
 	def finish_calibration(event=None):
 		nonlocal finished
 
+		print("\nComputing calibration...")
+
+		standard_coefficients, standard_rmse=compute_dlt(
+			object_points,
+			image_points
+			)
+
+		modified_coefficients,modified_rmse=compute_modified_dlt(
+			object_points,
+			image_points
+			)
+
+		calibration_result["standard_coefficients"]=standard_coefficients
+		calibration_result['standard_rmse']=standard_rmse
+		calibration_result['modified_coefficients']=modified_coefficients
+		calibration_result['modified_rmse']=modified_rmse
+
+		status_text.set_text(
+			f"Calibration complete | "
+			f"Standard RMSE: {standard_rmse:.3f} px |"
+			f"Modified RMSE: {modified_rmse:.3f} px"
+			)
+
+		fig.canvas.draw_idle()
+
+		print(
+			f"\nStandard DLT residual: {standard_rmse:.3f} pixels"
+			)
+
 		finished = True
-		plt.close(fig)
 
 	#keyboard control
 	def on_key(event):
@@ -343,21 +378,20 @@ def show_calibration_image(image_path, object_points):
 
 	plt.show()
 
-	return image_points
+	return image_points, calibration_result
 
 def save_calibration_results(
 		output_dir,
-		image_path,
+		camera_number,
 		object_points,
 		image_points,
 		coefficients,
 		rmse):
 
 	output_dir.mkdir(parents=True, exist_ok=True)
-	stem = image_path.stem
 
-	coefficients_file = output_dir / f"{stem}_dlt_coefficients.csv"
-	points_file = output_dir / f"{stem}_clicked_points.csv"
+	coefficients_file = output_dir / f"{camera_number}_dlt_coefficients.csv"
+	points_file = output_dir / f"{camera_number}_clicked_points.csv"
 
 	coefficient_data = np.column_stack([
 		np.arange(1,12),
@@ -394,6 +428,44 @@ def save_calibration_results(
 	print(coefficients_file)
 	print(points_file)
 	
+def save_combined_coefficients(
+	camera_results,
+	output_dir):
+
+	output_dir.mkdir(
+		parents=True,
+		exist_ok=True
+		)
+
+	coefficient_matrix=np.column_stack([
+		result["modified_coefficients"]
+		for result in camera_results
+		])
+
+	header = ",".join([
+		f"camera_{result['camera_number']}"
+		for result in camera_results
+		])
+
+	output_file = (
+		output_dir / 
+		"dlt_coefficients_all_cameras.csv"
+		)
+
+	np.savetxt(
+		output_file,
+		coefficient_matrix,
+		delimiter=",",
+		header=header,
+		comments="",
+		fmt="%.12g"
+		)
+
+	print(
+		"\nCombined DLT coefficients saved:"
+		)
+
+	print(output_file)
 
 
 def main():
@@ -406,47 +478,83 @@ def main():
 
 	object_points = load_object_points(object_file)
 
-	print("DLT Camera Calibration")
-	print(f"Calibration object: {object_file}")
-	print(f"Loaded {len(object_points)}")
+	#empty list for camera results
+	camera_results = []
 
-	image_path = choose_calibration_image()
-	print(f"Calibration image: {image_path}")
+	#iterable value for which we're on
+	camera_number = 1
 
-	image_points = show_calibration_image(
-		image_path,
-		object_points
+	while True:
+		print("DLT Camera Calibration")
+		print(f"Calibration object: {object_file}")
+		print(f"Loaded {len(object_points)}")
+		print(f"\n --- CAMERA {camera_number} ---")
+
+		image_path = choose_calibration_image()
+		print(f"Calibration image: {image_path}")
+
+		output_dir = image_path.parent
+
+		image_points,calibration_result = show_calibration_image(
+			image_path,
+			object_points
+			)
+
+
+		standard_coefficients = calibration_result['standard_coefficients']
+		standard_rmse = calibration_result['standard_rmse']
+
+		modified_coefficients = calibration_result['modified_coefficients']
+		modified_rmse = calibration_result['modified_rmse']
+
+		camera_results.append({
+			"camera_number":camera_number,
+			"image_path": image_path,
+			"image_points":image_points,
+			"standard_coefficients":standard_coefficients,
+			"standard_rmse":standard_rmse,
+			"modified_coefficients":modified_coefficients,
+			"modified_rmse":modified_rmse
+			})
+
+
+		save_calibration_results(
+			output_dir = output_dir,
+			camera_number = camera_number,
+			object_points = object_points,
+			image_points = image_points,
+			coefficients = modified_coefficients,
+			rmse = modified_rmse)
+
+		print("\nSTANDARD 11-PARAMETER DLT")
+		print(f"Residual: {standard_rmse:.3f} pixels")
+		print("Coefficients:")
+		print(standard_coefficients)
+
+		print("\nMODIFIED 11-PARAMETER DLT")
+		print(f"Residual: {modified_rmse:.3f} pixels")
+		print("Coefficients:")
+		print(modified_coefficients)
+
+		response=input(
+			"\nAdd another camera? [Y/N]: "
+			).strip().lower()
+
+		if response!='y':
+			break
+
+		camera_number+=1
+
+	print(f"\nCalibration complete: "
+		f"{len(camera_results)} camera(s) calibrated."
 		)
 
-	standard_coefficients, standard_rmse = compute_dlt(
-		object_points,
-		image_points
+	combined_output_dir = camera_results[0]["image_path"].parents[2]
+
+	save_combined_coefficients(
+		camera_results,
+		combined_output_dir
 		)
-
-	modified_coefficients, modified_rmse = compute_modified_dlt(
-		object_points,
-		image_points
-		)
-
-	output_dir = image_path.parent / "dlt_results"
-
-	save_calibration_results(
-		output_dir = output_dir,
-		image_path = image_path,
-		object_points = object_points,
-		image_points = image_points,
-		coefficients = modified_coefficients,
-		rmse = modified_rmse)
-
-	print("\nSTANDARD 11-PARAMETER DLT")
-	print(f"Residual: {standard_rmse:.3f} pixels")
-	print("Coefficients:")
-	print(standard_coefficients)
-
-	print("\nMODIFIED 11-PARAMETER DLT")
-	print(f"Residual: {modified_rmse:.3f} pixels")
-	print("Coefficients:")
-	print(modified_coefficients)
 
 if __name__ == '__main__':
 		main()
